@@ -1,0 +1,38 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-service-hpa
+  namespace: production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payment-service
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50  # Scale when average CPU exceeds 50%
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80  # Scale when average memory exceeds 80%
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15  # Fast scale-up (up to 100% capacity in 15 seconds)
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Cooldown of 5 minutes before scale-down
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60  # Scale down slowly (10% max reduction per minute)

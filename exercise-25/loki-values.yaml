@@ -1,0 +1,19 @@
+# Loki values configuration
+loki:
+  auth_enabled: false # Single tenant mode for simplicity
+
+  commonConfig:
+    replication_factor: 1
+
+  storage:
+    type: filesystem
+
+  schemaConfig:
+    configs:
+      - from: "2020-10-24"
+        index:
+          period: 24h
+          prefix: index_
+        object_store: filesystem
+        store: boltdb-shipper
+        schema: v11

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: payment-service
+description: A reusable Helm chart for EKS microservices (payment-service)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

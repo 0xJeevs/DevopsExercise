@@ -1,0 +1,30 @@
+# Prometheus Stack values configuration
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector:
+      matchLabels:
+        release: prometheus-stack
+
+grafana:
+  enabled: true
+  adminPassword: "admin"
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki-gateway.monitoring.svc.cluster.local
+      jsonData:
+        derivedFields:
+          - datasourceUid: Tempo
+            matcherRegex: "traceID=(\\w+)"
+            name: TraceID
+            url: "$${__value.raw}"
+    - name: Tempo
+      type: tempo
+      access: proxy
+      url: http://tempo-query.monitoring.svc.cluster.local:3100
+      jsonData:
+        httpMethod: GET
+        serviceMap:
+          datasourceUid: Prometheus

@@ -1,0 +1,120 @@
+name: Continuous Integration & Continuous Deployment
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+  test:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Environment
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Execute Tests
+        # Pipeline will FAIL if this returns a non-zero exit code (e.g. test failures)
+        run: npm test
+
+  security_scan:
+    name: Code & Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Scan dependencies for vulnerabilities
+      - name: Audit NPM Packages
+        run: npm audit --audit-level=high
+
+      # Static Application Security Testing (SAST)
+      - name: Run Trufflehog (Secret Scanner)
+        uses: trufflesecurity/trufflehog-action@main
+        with:
+          extra_args: --only-verified
+
+  build_and_push:
+    name: Build Docker Image & Push to ECR
+    needs: [test, security_scan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build Docker Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: payment-service
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # Container Security Scan before pushing
+      - name: Scan Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/payment-service:${{ github.sha }}
+          format: 'table'
+          exit-code: '1' # Fails the pipeline if vulnerabilities are found
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH' # Security violations trigger failure
+
+      - name: Push Image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: payment-service
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+  gitops_update:
+    name: Update GitOps Config Repository
+    needs: build_and_push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GitOps Repository
+        uses: actions/checkout@v3
+        with:
+          repository: my-org/gitops-config
+          token: ${{ secrets.GITOPS_REPO_PAT }}
+          path: gitops-config
+
+      - name: Update Helm Image Tag
+        run: |
+          cd gitops-config
+          # Using yq to patch the deployment image tag in Git values.yaml
+          yq eval -i '.image.tag = "${{ github.sha }}"' charts/payment-service/values.yaml
+          
+      - name: Commit and Push Changes
+        run: |
+          cd gitops-config
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add charts/payment-service/values.yaml
+          git commit -m "Deploying payment-service image tag ${{ github.sha }} [skip ci]"
+          git push origin main

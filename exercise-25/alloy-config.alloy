@@ -1,0 +1,46 @@
+// 1. HARVEST LOGS FROM THE HOST LOG FILES
+local.file_match "kubernetes_pods" {
+  path_targets = [{"__path__" = "/var/log/pods/*/*/*.log"}]
+}
+
+loki.source.file "pods_log_scraper" {
+  targets    = local.file_match.kubernetes_pods.targets
+  forward_to = [loki.write.loki_receiver.receiver]
+}
+
+// Write the parsed log streams to Loki
+loki.write "loki_receiver" {
+  endpoint {
+    url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+  }
+}
+
+// 2. RECEIVE DISTRIBUTED TRACES AND FORWARD TO TEMPO
+otelcol.receiver.otlp "otlp_receiver" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces = [otelcol.processor.batch.default.input]
+  }
+}
+
+// Batch traces to reduce request volume
+otelcol.processor.batch "default" {
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+// Write trace data to Tempo
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo.monitoring.svc.cluster.local:4317"
+    tls {
+      insecure = true
+    }
+  }
+}

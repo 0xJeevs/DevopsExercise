@@ -1,0 +1,37 @@
+# QA values for payment-service
+replicaCount: 2
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+
+configMapData:
+  DB_HOST: "qa-db.internal"
+  DB_PORT: "5432"
+  ENV_NAME: "qa"
+
+secretData:
+  DB_USER: "qa_user"
+  DB_PASSWORD: "qa-secure-password"
+
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+  hosts:
+    - host: qa-payment.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80

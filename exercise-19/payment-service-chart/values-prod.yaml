@@ -1,0 +1,40 @@
+# Prod values for payment-service
+replicaCount: 3
+
+resources:
+  limits:
+    cpu: "1"
+    memory: 1Gi
+  requests:
+    cpu: "500m"
+    memory: 512Mi
+
+configMapData:
+  DB_HOST: "prod-db.internal"
+  DB_PORT: "5432"
+  ENV_NAME: "prod"
+
+secretData:
+  DB_USER: "prod_user"
+  DB_PASSWORD: "prod-secure-password"
+
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:123456789012:certificate/abc-123-xyz
+  hosts:
+    - host: payment.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 75
